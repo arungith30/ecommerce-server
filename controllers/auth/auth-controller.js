@@ -36,27 +36,30 @@ const registerUser = async (req, res) => {
   }
 };
 
-//login
+//login user function
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
     const checkUser = await User.findOne({ email });
-    if (!checkUser)
+    if (!checkUser) {
       return res.json({
         success: false,
         message: "User doesn't exists! Please register first",
       });
-
+    }
     const checkPasswordMatch = await bcrypt.compare(
       password,
       checkUser.password
     );
-    if (!checkPasswordMatch)
+
+    if (!checkPasswordMatch) {
       return res.json({
         success: false,
         message: "Incorrect password! Please try again",
       });
+    }
+    //Generate JWT
 
     const token = jwt.sign(
       {
@@ -69,23 +72,62 @@ const loginUser = async (req, res) => {
       { expiresIn: "60m" }
     );
 
-    res.cookie("token", token, { httpOnly: true, secure: false }).json({
-      success: true,
-      message: "Logged in successfully",
-      user: {
-        email: checkUser.email,
-        role: checkUser.role,
-        id: checkUser._id,
-        userName: checkUser.userName,
-      },
-    });
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: false, // HTTPS only in production
+        sameSite: "lax", //CSRF
+        maxAge: 60 * 60 * 1000, // 1 hour
+      })
+      .json({
+        success: true,
+        message: "Logged in successfully",
+        user: {
+          email: checkUser.email,
+          role: checkUser.role,
+          id: checkUser._id,
+          userName: checkUser.userName,
+        },
+      });
+    console.log(token);
   } catch (e) {
     console.log(e);
     res.status(500).json({
       success: false,
-      message: "Some error occured",
+      message: "Some error occured.Please try again.",
+    });
+  }
+};
+//logout user
+
+const logoutUser = (req, res) => {
+  res.clearCookie("token").json({
+    success: true,
+    message: "Logged out successfully!",
+  });
+};
+
+// authMiddleware to check user authorization token
+
+const authMiddleware = async (req, res, next) => {
+  console.log("cookies received:", req.cookies);
+  const token = req.cookies.token;
+  if (!token)
+    return res.status(401).json({
+      success: false,
+      message: "NO authentication token provided!",
+    });
+
+  try {
+    const decoded = jwt.verify(token, "CLIENT_SECRET_KEY");
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
     });
   }
 };
 
-module.exports = { registerUser, loginUser };
+module.exports = { registerUser, loginUser, logoutUser, authMiddleware };
